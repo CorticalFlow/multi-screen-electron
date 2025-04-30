@@ -1,7 +1,5 @@
 # Multi-Screen Electron Application Framework
 
-![Multiple screens showing data visualization](https://images.unsplash.com/photo-1526498460520-4c246339dccb?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80)
-
 ## Overview
 
 A powerful framework for building multi-screen Electron applications designed to enhance cognitive workflows. This project enables professionals in data-intensive fields to process, visualize, and act upon multiple streams of information simultaneously by distributing information across physical screens.
