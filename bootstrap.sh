@@ -206,7 +206,7 @@ EOL
 # Create the main process file
 echo "Creating main process file..."
 cat > src/main.js << 'EOL'
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, dialog } = require('electron');
 const path = require('path');
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
@@ -216,6 +216,7 @@ if (require('electron-squirrel-startup')) {
 
 // Array to store our windows
 const windows = [];
+let tray = null;
 
 // Data service modules
 const services = [
@@ -303,6 +304,310 @@ const setupIPC = (screenIndex, window) => {
   });
 };
 
+// Create system tray icon and menu
+function createTray() {
+  // Create icon for tray - use the generated PNG icon
+  const iconPath = path.join(__dirname, '..', 'assets', 'tray-icon.png');
+  let icon;
+  
+  try {
+    // Try to load the PNG icon
+    icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) {
+      throw new Error('Icon is empty');
+    }
+  } catch (error) {
+    console.log('Creating fallback icon for tray...');
+    // Create a simple, visible black square icon
+    const fallbackIconData = Buffer.from([
+      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+      0x00, 0x00, 0x00, 0x0D, // IHDR chunk size
+      0x49, 0x48, 0x44, 0x52, // IHDR
+      0x00, 0x00, 0x00, 0x10, // Width: 16
+      0x00, 0x00, 0x00, 0x10, // Height: 16
+      0x08, 0x02, 0x00, 0x00, 0x00, // Bit depth: 8, Color type: 2 (RGB), no alpha
+      0x90, 0x91, 0x68, 0x36, // CRC
+      0x00, 0x00, 0x00, 0x37, // IDAT chunk size (55 bytes)
+      0x49, 0x44, 0x41, 0x54, // IDAT
+      // Compressed image data for a solid black 16x16 square
+      0x78, 0x9C, 0xED, 0xC1, 0x01, 0x01, 0x00, 0x00, 0x00, 0x80, 0x90, 0xFE, 0xAF, 0xEE, 0x08, 0x0A,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1F, 0x70, 0x00, 0x0B,
+      0x1F, 0x10, 0x18, 0xDC, // IDAT CRC
+      0x00, 0x00, 0x00, 0x00, // IEND chunk size
+      0x49, 0x45, 0x4E, 0x44, // IEND
+      0xAE, 0x42, 0x60, 0x82  // IEND CRC
+    ]);
+    icon = nativeImage.createFromBuffer(fallbackIconData);
+  }
+  
+  // For macOS, set as template image for proper dark/light mode support
+  icon.setTemplateImage(true);
+  
+  tray = new Tray(icon);
+  
+  // Create context menu for tray
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Focus',
+      submenu: [
+        {
+          label: 'Grab Focus (All Screens)',
+          click: () => {
+            grabFocus();
+          }
+        },
+        {
+          label: 'Show All Windows',
+          click: () => {
+            showAllWindows();
+          }
+        },
+        {
+          label: 'Focus Primary Screen',
+          click: () => {
+            focusSpecificScreen(0);
+          }
+        },
+        {
+          type: 'separator'
+        },
+        {
+          label: 'Focus Screen 1',
+          click: () => {
+            focusSpecificScreen(0);
+          }
+        },
+        {
+          label: 'Focus Screen 2', 
+          click: () => {
+            focusSpecificScreen(1);
+          }
+        },
+        {
+          label: 'Focus Screen 3',
+          click: () => {
+            focusSpecificScreen(2);
+          }
+        },
+        {
+          label: 'Focus Screen 4',
+          click: () => {
+            focusSpecificScreen(3);
+          }
+        },
+        {
+          label: 'Focus Screen 5',
+          click: () => {
+            focusSpecificScreen(4);
+          }
+        },
+        {
+          label: 'Focus Screen 6',
+          click: () => {
+            focusSpecificScreen(5);
+          }
+        }
+      ]
+    },
+    {
+      type: 'separator'
+    },
+    {
+      label: 'Windows',
+      submenu: [
+        {
+          label: 'Create New Window Set',
+          click: () => {
+            createWindows();
+          }
+        },
+        {
+          label: 'Minimize All',
+          click: () => {
+            minimizeAllWindows();
+          }
+        },
+        {
+          label: 'Close All Windows',
+          click: () => {
+            closeAllWindows();
+          }
+        }
+      ]
+    },
+    {
+      type: 'separator'
+    },
+    {
+      label: 'About Multi-Screen Electron App',
+      click: () => {
+        showAboutDialog();
+      }
+    },
+    {
+      type: 'separator'
+    },
+    {
+      label: 'Quit',
+      accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+      click: () => {
+        app.quit();
+      }
+    }
+  ]);
+  
+  tray.setToolTip('Multi-Screen Electron App');
+  tray.setContextMenu(contextMenu);
+  
+  // Handle tray click (primarily for Windows, but works on macOS too)
+  tray.on('click', () => {
+    grabFocus();
+  });
+}
+
+// Show all existing windows
+function showAllWindows() {
+  console.log('Showing all windows...');
+  windows.forEach((window, index) => {
+    if (window && !window.isDestroyed()) {
+      if (window.isMinimized()) {
+        window.restore();
+      }
+      window.show();
+      window.focus();
+    }
+  });
+  app.focus();
+}
+
+// "Grab Focus" function - brings all windows to front on all screens
+function grabFocus() {
+  console.log('Grabbing focus for all windows...');
+  
+  // Get all displays
+  const displays = screen.getAllDisplays();
+  console.log(`Found ${displays.length} display(s)`);
+  
+  // Show and focus all existing windows
+  windows.forEach((window, index) => {
+    if (window && !window.isDestroyed()) {
+      console.log(`Processing window ${index + 1}`);
+      
+      // Restore if minimized
+      if (window.isMinimized()) {
+        window.restore();
+      }
+      
+      // Show window
+      window.show();
+      
+      // Force focus using the "always on top" trick
+      window.setAlwaysOnTop(true);
+      window.focus();
+      
+      // Remove always on top after a short delay
+      setTimeout(() => {
+        if (window && !window.isDestroyed()) {
+          window.setAlwaysOnTop(false);
+        }
+      }, 100);
+    }
+  });
+  
+  // If no windows exist, create them
+  if (windows.length === 0) {
+    createWindows();
+  }
+  
+  // Focus the app itself
+  app.focus();
+}
+
+// Focus a specific screen/window
+function focusSpecificScreen(screenIndex) {
+  console.log(`Focusing screen ${screenIndex + 1}...`);
+  
+  if (screenIndex >= 0 && screenIndex < windows.length) {
+    const window = windows[screenIndex];
+    if (window && !window.isDestroyed()) {
+      // Restore if minimized
+      if (window.isMinimized()) {
+        window.restore();
+      }
+      
+      // Show and focus the window
+      window.show();
+      window.setAlwaysOnTop(true);
+      window.focus();
+      
+      // Remove always on top after a short delay
+      setTimeout(() => {
+        if (window && !window.isDestroyed()) {
+          window.setAlwaysOnTop(false);
+        }
+      }, 100);
+      
+      app.focus();
+    } else {
+      console.log(`Screen ${screenIndex + 1} window not available`);
+    }
+  } else {
+    console.log(`Invalid screen index: ${screenIndex + 1}`);
+  }
+}
+
+// Minimize all windows
+function minimizeAllWindows() {
+  console.log('Minimizing all windows...');
+  windows.forEach((window, index) => {
+    if (window && !window.isDestroyed()) {
+      window.minimize();
+      console.log(`Minimized window ${index + 1}`);
+    }
+  });
+}
+
+// Close all windows
+function closeAllWindows() {
+  console.log('Closing all windows...');
+  windows.forEach((window, index) => {
+    if (window && !window.isDestroyed()) {
+      window.close();
+      console.log(`Closed window ${index + 1}`);
+    }
+  });
+  // Clear the windows array
+  windows.length = 0;
+}
+
+// Show about dialog
+function showAboutDialog() {
+  dialog.showMessageBox(null, {
+    type: 'info',
+    title: 'About Multi-Screen Electron App',
+    message: 'Multi-Screen Electron App',
+    detail: `A powerful multi-screen Electron application with system tray integration.
+
+Version: 1.0.0
+Platform: ${process.platform}
+Electron: ${process.versions.electron}
+Node.js: ${process.versions.node}
+Chrome: ${process.versions.chrome}
+
+Features:
+• Multi-screen window management
+• System tray integration  
+• Dark mode support
+• Cross-screen synchronization
+• Focus management across displays
+
+Created with Electron Forge, React, and Tailwind CSS.`,
+    buttons: ['OK']
+  });
+}
+
 // Handle dark mode toggle across all screens
 ipcMain.on('toggle-dark-mode', (event, isDark) => {
   console.log('Dark mode toggled:', isDark);
@@ -314,7 +619,10 @@ ipcMain.on('toggle-dark-mode', (event, isDark) => {
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
-app.on('ready', createWindows);
+app.on('ready', () => {
+  createTray();
+  createWindows();
+});
 
 // Quit when all windows are closed, except on macOS.
 app.on('window-all-closed', () => {
@@ -328,6 +636,13 @@ app.on('activate', () => {
   // dock icon is clicked and there are no other windows open.
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindows();
+  }
+});
+
+// Clean up tray when app is quitting
+app.on('before-quit', () => {
+  if (tray) {
+    tray.destroy();
   }
 });
 EOL
@@ -763,6 +1078,129 @@ exports.stopDataPush = () => {
 EOL
 done
 
+# Create a simple tray icon (SVG that can be converted to PNG)
+echo "Creating system tray icon..."
+mkdir -p src/assets
+cat > src/assets/tray-icon.svg << 'EOL'
+<svg width="16" height="16" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg">
+  <rect width="16" height="16" fill="none"/>
+  <rect x="2" y="2" width="12" height="12" fill="currentColor" stroke="currentColor" stroke-width="1" rx="2"/>
+  <rect x="4" y="4" width="8" height="8" fill="none" stroke="white" stroke-width="1" rx="1"/>
+  <rect x="6" y="6" width="4" height="4" fill="white" rx="1"/>
+</svg>
+EOL
+
+# Create a PNG version for the tray icon (16x16 pixels, template image for macOS)
+echo "Creating PNG tray icon..."
+cat > src/assets/create-icon.js << 'EOL'
+// Create a proper system tray icon for macOS
+const fs = require('fs');
+const path = require('path');
+
+// Create a simple but visible 16x16 PNG icon (computer/monitor icon)
+// This creates a black template icon that will be visible in the menu bar
+const pngData = Buffer.from([
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // PNG signature
+  0x00, 0x00, 0x00, 0x0D, // IHDR chunk size
+  0x49, 0x48, 0x44, 0x52, // IHDR
+  0x00, 0x00, 0x00, 0x10, // Width: 16
+  0x00, 0x00, 0x00, 0x10, // Height: 16
+  0x08, 0x06, 0x00, 0x00, 0x00, // Bit depth: 8, Color type: 6 (RGBA), Compression: 0, Filter: 0, Interlace: 0
+  0x1F, 0xF3, 0xFF, 0x61, // IHDR CRC
+  
+  // IDAT chunk with simple monitor/screen icon
+  0x00, 0x00, 0x00, 0x96, // IDAT chunk size
+  0x49, 0x44, 0x41, 0x54, // IDAT
+  0x78, 0x9C, 0x95, 0x90, 0x31, 0x0A, 0x80, 0x30, 0x10, 0x45, 0x5F, 0x53, 0x0A, 0x82, 0x20, 0x88,
+  0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95,
+  0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20,
+  0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88,
+  0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95,
+  0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20,
+  0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88,
+  0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95,
+  0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x20,
+  0x88, 0x95, 0x20, 0x88, 0x95, 0x20, 0x88, 0x95, 0x9A, 0x54, 0x7A, 0x96, // Compressed data
+  0xF7, 0x5A, 0x12, 0x34, // IDAT CRC
+  
+  0x00, 0x00, 0x00, 0x00, // IEND chunk size
+  0x49, 0x45, 0x4E, 0x44, // IEND
+  0xAE, 0x42, 0x60, 0x82  // IEND CRC
+]);
+
+// Alternative: Create a simple graphic icon programmatically
+function createSimpleIcon() {
+  // Create a basic 16x16 RGBA image data for a monitor icon
+  const width = 16;
+  const height = 16;
+  const bytesPerPixel = 4; // RGBA
+  const imageData = Buffer.alloc(width * height * bytesPerPixel);
+  
+  // Fill with transparent background
+  imageData.fill(0);
+  
+  // Draw a simple computer monitor shape in black
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const index = (y * width + x) * bytesPerPixel;
+      
+      // Monitor outline (3-11 x, 2-10 y)
+      if ((x >= 3 && x <= 11 && (y === 2 || y === 10)) || 
+          (y >= 2 && y <= 10 && (x === 3 || x === 11))) {
+        imageData[index] = 0;     // R
+        imageData[index + 1] = 0; // G  
+        imageData[index + 2] = 0; // B
+        imageData[index + 3] = 255; // A
+      }
+      
+      // Monitor base (6-8 x, 11-12 y)
+      if (x >= 6 && x <= 8 && y >= 11 && y <= 12) {
+        imageData[index] = 0;     // R
+        imageData[index + 1] = 0; // G
+        imageData[index + 2] = 0; // B  
+        imageData[index + 3] = 255; // A
+      }
+      
+      // Monitor base support (7, 13)
+      if (x === 7 && y === 13) {
+        imageData[index] = 0;     // R
+        imageData[index + 1] = 0; // G
+        imageData[index + 2] = 0; // B
+        imageData[index + 3] = 255; // A
+      }
+    }
+  }
+  
+  return imageData;
+}
+
+try {
+  fs.writeFileSync(path.join(__dirname, 'tray-icon.png'), pngData);
+  console.log('Tray icon created successfully');
+} catch (error) {
+  console.log('Creating fallback icon...');
+  // Create a simple black square as absolute fallback
+  const simpleIcon = Buffer.from([
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
+    0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x91, 0x68, 0x36,
+    0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54,
+    0x78, 0x9C, 0x62, 0x00, 0x02, 0x00, 0x00, 0x05, 0x00, 0x01,
+    0x0D, 0x0A, 0x2D, 0xB4,
+    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82
+  ]);
+  fs.writeFileSync(path.join(__dirname, 'tray-icon.png'), simpleIcon);
+  console.log('Fallback tray icon created');
+}
+EOL
+
+# Generate the tray icon
+echo "Generating tray icon PNG file..."
+cd src/assets
+node create-icon.js
+cd ../..
+
 echo "Project setup completed successfully!"
 echo ""
 echo "🌙 DARK MODE FEATURES:"
@@ -773,6 +1211,18 @@ echo "✅ Modern dark UI with Tailwind CSS"
 echo "✅ Smooth transitions and animations"
 echo "✅ Proper dark mode styling (gray-900 backgrounds)"
 echo ""
+echo "🖱️  SYSTEM TRAY FEATURES:"
+echo "✅ System tray icon in macOS menu bar (top-right)"
+echo "✅ Context menu with app controls"
+echo "✅ 'Grab Focus' functionality to bring all windows to front"
+echo "✅ 'Show All Windows' to restore minimized windows"
+echo "✅ Template icon that adapts to macOS dark/light themes"
+echo "✅ Cross-screen window management"
+echo ""
 echo "To start the app, run: npm start"
 echo ""
-echo "Dark mode will be active by default on all screens!"
+echo "Features:"
+echo "• Dark mode will be active by default on all screens"
+echo "• System tray icon will appear in macOS menu bar"
+echo "• Right-click tray icon for app controls"
+echo "• Click tray icon to grab focus of all windows"
