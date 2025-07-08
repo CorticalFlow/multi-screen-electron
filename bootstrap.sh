@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# A script to create a React Electron app with 6 screens using Electron Forge
+# A script to create a React Electron app with 6 screens using Electron Forge and Tailwind CSS
 
-echo "Creating multi-screen Electron app with React..."
+echo "Creating multi-screen Electron app with React and Tailwind CSS (Dark Mode Default)..."
 
 # Create a new directory for the project
 mkdir multi-screen-electron-app
@@ -17,14 +17,46 @@ echo "Installing React and dependencies..."
 npm install --save react react-dom
 npm install --save-dev @babel/core @babel/preset-react babel-loader
 
+# Install Tailwind CSS and its dependencies
+echo "Installing Tailwind CSS..."
+npm install --save-dev tailwindcss @tailwindcss/postcss autoprefixer postcss-loader css-loader style-loader
+npx tailwindcss init -p
+
 # Create a .babelrc file for React
 echo "Creating .babelrc for React support..."
 echo '{
   "presets": ["@babel/preset-react"]
 }' > .babelrc
 
-# Update webpack.rules.js to support JSX
-echo "Updating webpack configuration for JSX support..."
+# Update tailwind.config.js to include the src directory and enable dark mode
+echo "Updating Tailwind configuration..."
+cat > tailwind.config.js << 'EOL'
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: [
+    "./src/**/*.{js,jsx,ts,tsx,html}",
+  ],
+  darkMode: 'class',
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+EOL
+
+# Update postcss.config.js for proper Tailwind processing
+echo "Creating PostCSS configuration..."
+cat > postcss.config.js << 'EOL'
+module.exports = {
+  plugins: [
+    '@tailwindcss/postcss',
+    'autoprefixer',
+  ],
+}
+EOL
+
+# Update webpack.rules.js to support JSX and CSS with PostCSS
+echo "Updating webpack configuration for JSX and Tailwind CSS support..."
 cat > webpack.rules.js << 'EOL'
 module.exports = [
   // Add support for native node modules
@@ -53,6 +85,14 @@ module.exports = [
         presets: ['@babel/preset-react']
       }
     }
+  },
+  {
+    test: /\.css$/,
+    use: [
+      'style-loader',
+      'css-loader',
+      'postcss-loader'
+    ],
   }
 ];
 EOL
@@ -61,11 +101,6 @@ EOL
 echo "Creating webpack.renderer.config.js with proper JSX support..."
 cat > webpack.renderer.config.js << 'EOL'
 const rules = require('./webpack.rules');
-
-rules.push({
-  test: /\.css$/,
-  use: [{ loader: 'style-loader' }, { loader: 'css-loader' }],
-});
 
 module.exports = {
   // Put your normal webpack config below here
@@ -268,6 +303,15 @@ const setupIPC = (screenIndex, window) => {
   });
 };
 
+// Handle dark mode toggle across all screens
+ipcMain.on('toggle-dark-mode', (event, isDark) => {
+  console.log('Dark mode toggled:', isDark);
+  // Broadcast dark mode state to all screens
+  windows.forEach(window => {
+    window.webContents.send('dark-mode-changed', isDark);
+  });
+});
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.on('ready', createWindows);
@@ -312,12 +356,18 @@ contextBridge.exposeInMainWorld('electron', {
     },
     onPushData: (callback) => {
       ipcRenderer.on(`${channel}:push-data`, (_, data) => callback(data));
+    },
+    toggleDarkMode: (isDark) => {
+      ipcRenderer.send('toggle-dark-mode', isDark);
+    },
+    onDarkModeChanged: (callback) => {
+      ipcRenderer.on('dark-mode-changed', (_, isDark) => callback(isDark));
     }
   }
 });
 EOL
 
-# Create the renderer entry file
+# Create the renderer entry file with Tailwind CSS import
 echo "Creating renderer entry file..."
 cat > src/renderer.jsx << 'EOL'
 import React from 'react';
@@ -337,7 +387,7 @@ EOL
 echo "Creating HTML template..."
 cat > src/index.html << 'EOL'
 <!DOCTYPE html>
-<html>
+<html class="dark">
   <head>
     <meta charset="UTF-8" />
     <title>Multi-Screen Electron App</title>
@@ -348,70 +398,167 @@ cat > src/index.html << 'EOL'
 </html>
 EOL
 
-# Create CSS styles
-echo "Creating CSS styles..."
+# Create Tailwind CSS base file with dark mode styles
+echo "Creating Tailwind CSS with dark mode styles..."
 cat > src/styles.css << 'EOL'
+@import "tailwindcss";
+
+@theme {
+  --color-*: initial;
+  --color-gray-50: #f8fafc;
+  --color-gray-100: #f1f5f9;
+  --color-gray-200: #e2e8f0;
+  --color-gray-300: #cbd5e1;
+  --color-gray-400: #94a3b8;
+  --color-gray-500: #64748b;
+  --color-gray-600: #475569;
+  --color-gray-700: #334155;
+  --color-gray-800: #1e293b;
+  --color-gray-900: #0f172a;
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-yellow-400: #facc15;
+}
+
+/* Global styles for dark mode */
+* {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Custom scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4b5563;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}
+
+/* Focus styles */
+button:focus,
+input:focus {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Custom animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Ensure proper text rendering */
 body {
-  font-family: Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  background-color: #f0f0f0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 100vh;
-}
-
-button {
-  padding: 10px 15px;
-  border: none;
-  border-radius: 4px;
-  background-color: #4285f4;
-  color: white;
-  font-size: 16px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-button:hover {
-  background-color: #3367d6;
-}
-
-.screen-container {
-  width: 100%;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
-  box-sizing: border-box;
-  text-align: center;
-}
-
-.data-display {
-  margin: 20px 0;
-  padding: 15px;
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  max-height: 300px;
-  overflow-y: auto;
-  width: 80%;
-}
-
-h1 {
-  margin-bottom: 20px;
-  color: #333;
 }
 EOL
 
-# Create App component
+# Create Dark Mode Context with dark mode as default
+echo "Creating Dark Mode Context..."
+mkdir -p src/contexts
+cat > src/contexts/DarkModeContext.jsx << 'EOL'
+import React, { createContext, useContext, useState, useEffect } from 'react';
+
+const DarkModeContext = createContext();
+
+export const useDarkMode = () => {
+  const context = useContext(DarkModeContext);
+  if (!context) {
+    throw new Error('useDarkMode must be used within a DarkModeProvider');
+  }
+  return context;
+};
+
+export const DarkModeProvider = ({ children }) => {
+  // Default to dark mode
+  const [isDark, setIsDark] = useState(true);
+
+  useEffect(() => {
+    // Set dark mode as default on initial load
+    document.documentElement.classList.add('dark');
+    
+    // Listen for dark mode changes from other screens
+    if (window.electron && window.electron.ipc) {
+      window.electron.ipc.onDarkModeChanged((darkMode) => {
+        setIsDark(darkMode);
+        if (darkMode) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      });
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    const newDarkMode = !isDark;
+    setIsDark(newDarkMode);
+    
+    if (newDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+    
+    // Notify other screens via IPC
+    if (window.electron && window.electron.ipc) {
+      window.electron.ipc.toggleDarkMode(newDarkMode);
+    }
+  };
+
+  return (
+    <DarkModeContext.Provider value={{ isDark, toggleDarkMode }}>
+      {children}
+    </DarkModeContext.Provider>
+  );
+};
+EOL
+
+# Create App component with Dark Mode Provider
 echo "Creating React components..."
 mkdir -p src/components
 cat > src/components/App.jsx << 'EOL'
 import React, { useState, useEffect } from 'react';
+import { DarkModeProvider } from '../contexts/DarkModeContext';
 import Screen1 from './Screen1';
 import Screen2 from './Screen2';
 import Screen3 from './Screen3';
@@ -433,7 +580,7 @@ const App = () => {
 
   useEffect(() => {
     // Get the screen index from the electron global
-    if (window.electron) {
+    if (window.electron && window.electron.screen) {
       setScreenIndex(window.electron.screen.index);
     }
   }, []);
@@ -441,25 +588,31 @@ const App = () => {
   // Render the appropriate screen component based on the index
   const ScreenComponent = screenComponents[screenIndex] || screenComponents[0];
 
-  return <ScreenComponent />;
+  return (
+    <DarkModeProvider>
+      <ScreenComponent />
+    </DarkModeProvider>
+  );
 };
 
 export default App;
 EOL
 
-# Create Screen components
+# Create Screen components with unified background and dark mode support (default dark)
 for i in {1..6}; do
   echo "Creating Screen${i} component..."
   cat > src/components/Screen${i}.jsx << EOL
 import React, { useState, useEffect } from 'react';
+import { useDarkMode } from '../contexts/DarkModeContext';
 
 const Screen${i} = () => {
   const [receivedData, setReceivedData] = useState('');
   const [pushedData, setPushedData] = useState([]);
+  const { isDark, toggleDarkMode } = useDarkMode();
 
   useEffect(() => {
     // Set up listeners for IPC events
-    if (window.electron) {
+    if (window.electron && window.electron.ipc) {
       window.electron.ipc.onReceiveData((data) => {
         setReceivedData(JSON.stringify(data, null, 2));
       });
@@ -471,7 +624,7 @@ const Screen${i} = () => {
   }, []);
 
   const handleSendData = () => {
-    if (window.electron) {
+    if (window.electron && window.electron.ipc) {
       const data = {
         message: "Hello from Screen ${i}!",
         timestamp: new Date().toISOString()
@@ -481,49 +634,76 @@ const Screen${i} = () => {
   };
 
   return (
-    <div className="screen-container" style={{ backgroundColor: getScreenColor(${i}) }}>
-      <h1>Screen ${i}</h1>
-      
-      <div className="data-display">
-        <h3>Pushed Data from Service ${i}</h3>
-        {pushedData.length > 0 ? (
-          pushedData.map((data, index) => (
-            <div key={index}>
-              <pre>{JSON.stringify(data, null, 2)}</pre>
-              <hr />
-            </div>
-          ))
+    <div className="w-full h-screen flex flex-col justify-center items-center p-8 bg-gray-900 text-gray-100">
+      {/* Dark mode toggle button */}
+      <button
+        onClick={toggleDarkMode}
+        className="fixed top-6 right-6 p-3 rounded-full bg-gray-700 hover:bg-gray-600 shadow-lg transition-all duration-200 z-50"
+        title="Toggle Dark Mode"
+      >
+        {isDark ? (
+          <svg className="w-6 h-6 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+          </svg>
         ) : (
-          <p>No data received yet...</p>
+          <svg className="w-6 h-6 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+          </svg>
         )}
-      </div>
-
-      <button onClick={handleSendData}>
-        Send Data to Service ${i}
       </button>
 
-      {receivedData && (
-        <div className="data-display">
-          <h3>Response from Service ${i}</h3>
-          <pre>{receivedData}</pre>
+      <div className="fade-in max-w-4xl w-full">
+        <h1 className="text-5xl font-bold mb-12 text-center text-blue-400">
+          Screen ${i}
+        </h1>
+        
+        <div className="w-full max-h-96 overflow-y-auto bg-gray-800 rounded-xl shadow-2xl p-8 mb-8 border border-gray-700">
+          <h3 className="text-2xl font-semibold mb-6 text-gray-200">
+            Pushed Data from Service ${i}
+          </h3>
+          {pushedData.length > 0 ? (
+            <div className="space-y-4">
+              {pushedData.map((data, index) => (
+                <div key={index} className="fade-in">
+                  <pre className="text-sm text-left bg-gray-700 p-4 rounded-lg border border-gray-600 overflow-x-auto text-gray-200 font-mono">
+                    {JSON.stringify(data, null, 2)}
+                  </pre>
+                  {index < pushedData.length - 1 && (
+                    <hr className="my-4 border-gray-600" />
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-400 text-center py-8">
+              No data received yet...
+            </p>
+          )}
         </div>
-      )}
+
+        <div className="text-center">
+          <button 
+            onClick={handleSendData}
+            className="px-8 py-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg transition-all duration-300 ease-in-out transform hover:scale-105 focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50"
+          >
+            Send Data to Service ${i}
+          </button>
+        </div>
+
+        {receivedData && (
+          <div className="w-full max-h-96 overflow-y-auto bg-gray-800 rounded-xl shadow-2xl p-8 mt-8 border border-gray-700 fade-in">
+            <h3 className="text-2xl font-semibold mb-6 text-gray-200">
+              Response from Service ${i}
+            </h3>
+            <pre className="text-sm text-left bg-gray-700 p-4 rounded-lg border border-gray-600 overflow-x-auto text-gray-200 font-mono">
+              {receivedData}
+            </pre>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
-
-// Get a different color for each screen
-function getScreenColor(index) {
-  const colors = [
-    '#f0e6ff', // Light Purple
-    '#e6f0ff', // Light Blue
-    '#e6fff0', // Light Green
-    '#fff0e6', // Light Orange
-    '#ffe6f0', // Light Pink
-    '#f0ffe6', // Light Yellow
-  ];
-  return colors[index - 1] || colors[0];
-}
 
 export default Screen${i};
 EOL
@@ -584,4 +764,15 @@ EOL
 done
 
 echo "Project setup completed successfully!"
+echo ""
+echo "🌙 DARK MODE FEATURES:"
+echo "✅ Dark mode enabled by default"
+echo "✅ Unified dark theme across all screens"
+echo "✅ Dark mode toggle with cross-screen synchronization"
+echo "✅ Modern dark UI with Tailwind CSS"
+echo "✅ Smooth transitions and animations"
+echo "✅ Proper dark mode styling (gray-900 backgrounds)"
+echo ""
 echo "To start the app, run: npm start"
+echo ""
+echo "Dark mode will be active by default on all screens!"

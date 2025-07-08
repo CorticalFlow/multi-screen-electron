@@ -26,11 +26,7 @@ A powerful framework for building multi-screen Electron applications designed to
 # Clone the repository
 git clone https://github.com/yourusername/multi-screen-electron-app.git
 
-# Navigate to project directory
-cd multi-screen-electron-app
-
-# Install dependencies
-npm install
+./bootstrap.sh
 
 # Start the application
 npm start
